@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import com.example.a1st.ui.theme._1STTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,14 +36,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodoApp(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var taskText by remember { mutableStateOf("") }
+    var selectedDate by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
     val taskList = remember { mutableStateListOf<Task>() }
 
-    // Load saved tasks once on first launch
     LaunchedEffect(Unit) {
         TaskDataStore.getTasks(context).collect {
             taskList.clear()
@@ -54,49 +59,110 @@ fun TodoApp(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        TextField(
-            value = taskText,
-            onValueChange = { taskText = it },
-            label = { Text("Enter task") },
-            modifier = Modifier.fillMaxWidth()
+        // Heading
+        Text(
+            text = "📝 Your Tasks",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(vertical = 8.dp)
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = {
-                if (taskText.isNotBlank()) {
-                    taskList.add(Task(taskText))
-                    scope.launch {
-                        TaskDataStore.saveTasks(context, taskList)
-                    }
-                    taskText = ""
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
+        // Form Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(6.dp)
         ) {
-            Text("Add Task")
+            Column(modifier = Modifier.padding(12.dp)) {
+                TextField(
+                    value = taskText,
+                    onValueChange = { taskText = it },
+                    label = { Text("What's on your mind?") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    TextButton(onClick = { showDatePicker = true }) {
+                        Text(if (selectedDate.isBlank()) "📅 Pick Due Date" else "Due: $selectedDate")
+                    }
+                    Button(
+                        onClick = {
+                            if (taskText.isNotBlank()) {
+                                taskList.add(Task(taskText, dueDate = selectedDate))
+                                scope.launch {
+                                    TaskDataStore.saveTasks(context, taskList)
+                                }
+                                taskText = ""
+                                selectedDate = ""
+                            }
+                        }
+                    ) {
+                        Text("Add ➕")
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Your Tasks:", style = MaterialTheme.typography.headlineSmall)
+        if (showDatePicker) {
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val millis = datePickerState.selectedDateMillis
+                            if (millis != null) {
+                                try {
+                                    val formatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                    selectedDate = formatter.format(Date(millis))
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            showDatePicker = false
+                        }
+                    ) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDatePicker = false }) {
+                        Text("Cancel")
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
 
-        if (taskList.isEmpty()) {
-            Text("No tasks yet!", modifier = Modifier.padding(8.dp))
-        } else {
-            LazyColumn {
-                items(taskList, key = { it.text }) { task ->
-                    var visible by remember { mutableStateOf(true) }
+        Spacer(modifier = Modifier.height(8.dp))
 
-                    AnimatedVisibility(
-                        visible = visible,
-                        exit = fadeOut(animationSpec = tween(durationMillis = 300))
+        // Tasks
+        LazyColumn {
+            items(taskList, key = { it.text }) { task ->
+                var visible by remember { mutableStateOf(true) }
+
+                AnimatedVisibility(
+                    visible = visible,
+                    exit = fadeOut(animationSpec = tween(durationMillis = 300))
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row {
@@ -109,16 +175,25 @@ fun TodoApp(modifier: Modifier = Modifier) {
                                         }
                                     }
                                 )
-                                Crossfade(targetState = task.isDone) { done ->
-                                    Text(
-                                        text = task.text,
-                                        style = if (done)
-                                            MaterialTheme.typography.bodyLarge.copy(
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                            )
-                                        else
-                                            MaterialTheme.typography.bodyLarge
-                                    )
+                                Column {
+                                    Crossfade(targetState = task.isDone) { done ->
+                                        Text(
+                                            text = task.text,
+                                            style = if (done)
+                                                MaterialTheme.typography.bodyLarge.copy(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                                )
+                                            else
+                                                MaterialTheme.typography.bodyLarge
+                                        )
+                                    }
+                                    if (task.dueDate.isNotBlank()) {
+                                        Text(
+                                            text = "📅 Due: ${task.dueDate}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
                                 }
                             }
 
@@ -126,7 +201,7 @@ fun TodoApp(modifier: Modifier = Modifier) {
                                 onClick = {
                                     visible = false
                                     scope.launch {
-                                        delay(300) // Wait for fade-out animation
+                                        delay(300)
                                         taskList.remove(task)
                                         TaskDataStore.saveTasks(context, taskList)
                                     }
@@ -136,7 +211,6 @@ fun TodoApp(modifier: Modifier = Modifier) {
                             }
                         }
                     }
-                    Divider()
                 }
             }
         }
