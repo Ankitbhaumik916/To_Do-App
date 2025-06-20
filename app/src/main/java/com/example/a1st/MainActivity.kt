@@ -20,6 +20,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.a1st.SettingsDataStore
+
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,9 +30,26 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            _1STTheme {
+            val context = this
+            val scope = rememberCoroutineScope()
+
+            val isDarkMode by produceState(initialValue = false) {
+                SettingsDataStore.isDarkModeEnabled(context).collect {
+                    value = it
+                }
+            }
+
+            _1STTheme(darkTheme = isDarkMode) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    TodoApp(modifier = Modifier.padding(innerPadding))
+                    TodoApp(
+                        modifier = Modifier.padding(innerPadding),
+                        isDark = isDarkMode,
+                        onToggleTheme = { enabled ->
+                            scope.launch {
+                                SettingsDataStore.setDarkMode(context, enabled)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -38,7 +58,11 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TodoApp(modifier: Modifier = Modifier) {
+fun TodoApp(
+    modifier: Modifier = Modifier,
+    isDark: Boolean,
+    onToggleTheme: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var taskText by remember { mutableStateOf("") }
@@ -59,14 +83,19 @@ fun TodoApp(modifier: Modifier = Modifier) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Heading
+        // 🌗 Theme Toggle
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Text(if (isDark) "🌙" else "☀️")
+            Switch(checked = isDark, onCheckedChange = onToggleTheme)
+        }
+
         Text(
             text = "📝 Your Tasks",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(vertical = 8.dp)
         )
 
-        // Form Card
+        // Task Input
         Card(
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(6.dp)
@@ -116,23 +145,15 @@ fun TodoApp(modifier: Modifier = Modifier) {
                         onClick = {
                             val millis = datePickerState.selectedDateMillis
                             if (millis != null) {
-                                try {
-                                    val formatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-                                    selectedDate = formatter.format(Date(millis))
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
+                                selectedDate = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                    .format(Date(millis))
                             }
                             showDatePicker = false
                         }
-                    ) {
-                        Text("OK")
-                    }
+                    ) { Text("OK") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDatePicker = false }) {
-                        Text("Cancel")
-                    }
+                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
                 }
             ) {
                 DatePicker(state = datePickerState)
@@ -141,23 +162,21 @@ fun TodoApp(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Tasks
+        // Task List
         LazyColumn {
             items(taskList, key = { it.text }) { task ->
                 var visible by remember { mutableStateOf(true) }
 
                 AnimatedVisibility(
                     visible = visible,
-                    exit = fadeOut(animationSpec = tween(durationMillis = 300))
+                    exit = fadeOut(tween(300))
                 ) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 6.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Row(
                             modifier = Modifier
@@ -206,21 +225,11 @@ fun TodoApp(modifier: Modifier = Modifier) {
                                         TaskDataStore.saveTasks(context, taskList)
                                     }
                                 }
-                            ) {
-                                Text("❌")
-                            }
+                            ) { Text("❌") }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun TodoListPreview() {
-    _1STTheme {
-        TodoApp()
     }
 }
